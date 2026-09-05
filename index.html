@@ -87,6 +87,24 @@
     pointer-events: none; z-index: 50; opacity: 0; transition: opacity 0.3s;
   }
 
+  #penalty-message {
+    position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%);
+    display: none; flex-direction: column; align-items: center; gap: 6px;
+    pointer-events: none; z-index: 60; color: #ff3b3b;
+    font-size: 54px; font-weight: 900; letter-spacing: 8px; text-transform: uppercase;
+    text-shadow: 0 0 26px rgba(255,0,0,0.85);
+    animation: penaltyPulse 0.45s ease-in-out infinite alternate;
+  }
+  #penalty-title { line-height: 1; }
+  #penalty-sub {
+    font-size: 18px; font-weight: 600; color: #fff; letter-spacing: 3px;
+    text-shadow: 0 0 14px rgba(255,60,60,0.9);
+  }
+  @keyframes penaltyPulse {
+    from { transform: translate(-50%, -50%) scale(1); }
+    to { transform: translate(-50%, -50%) scale(1.06); }
+  }
+
   #main-menu-buttons { display: flex; gap: 14px; margin-bottom: 24px; }
   #online-panel {
     display: none; flex-direction: column; align-items: center; gap: 12px;
@@ -157,6 +175,7 @@
 
 <div id="countdown"></div>
 <div id="lap-message"></div>
+<div id="penalty-message"><span id="penalty-title">PENALIZACIÓN</span><span id="penalty-sub"></span></div>
 
 <div id="hud">
   <div id="timer">
@@ -837,6 +856,9 @@ function checkBuildingCollision(x, z, radius = 1.8) {
 }
 
 let oilSlideTimer = 0;
+let collisionCount = 0;
+let collisionCooldown = 0;
+let penaltyTimer = 0;
 
 function checkObstacleCollision(x, z) {
   let hitType = null;
@@ -855,6 +877,14 @@ function checkObstacleCollision(x, z) {
         const nz = dz / (dist + 0.001);
         carGroup.position.x += nx * (obs.radius - dist) * 0.8;
         carGroup.position.z += nz * (obs.radius - dist) * 0.8;
+        if (collisionCooldown <= 0 && penaltyTimer <= 0) {
+          collisionCooldown = 0.6;
+          collisionCount++;
+          if (collisionCount >= 3) {
+            collisionCount = 0;
+            penaltyTimer = 1.5;
+          }
+        }
       }
     }
   }
@@ -956,6 +986,17 @@ function updateHUD() {
   } else {
     if (pingEl) pingEl.textContent = '--';
     if (posEl) posEl.textContent = '--';
+  }
+
+  // Collision penalty banner (visible while the stun is active)
+  const penEl = document.getElementById('penalty-message');
+  if (penEl) {
+    if (penaltyTimer > 0 && gameState === 'racing') {
+      penEl.style.display = 'flex';
+      document.getElementById('penalty-sub').textContent = 'Inmovilizado ' + penaltyTimer.toFixed(1) + ' s';
+    } else {
+      penEl.style.display = 'none';
+    }
   }
 }
 
@@ -1406,6 +1447,9 @@ function startCountdown() {
   checkInOrder = 0;
   passedStart = false;
   oilSlideTimer = 0;
+  collisionCount = 0;
+  collisionCooldown = 0;
+  penaltyTimer = 0;
   clearTimeout(resultsTimer);
   localTotalTime = null;
   remoteFinishTimes.clear();
@@ -1467,17 +1511,22 @@ function animate() {
       const onOil = oilSlideTimer > 0;
       if (onOil) oilSlideTimer -= dt;
 
+      // Collision penalty (stunned: no movement for 1.5s)
+      const penalized = penaltyTimer > 0;
+      if (penalized) penaltyTimer -= dt;
+      if (collisionCooldown > 0) collisionCooldown -= dt;
+
       // Steering (reduced control on oil = sliding)
       const turnAmount = TURN_SPEED * dt;
       const speedFactor = Math.min(Math.abs(speed) / 20, 1);
       const controlFactor = onOil ? 0.45 : 1.0;
-      if (keys['a'] || keys['arrowleft']) carAngle += turnAmount * speedFactor * controlFactor;
-      if (keys['d'] || keys['arrowright']) carAngle -= turnAmount * speedFactor * controlFactor;
+      if (!penalized && (keys['a'] || keys['arrowleft'])) carAngle += turnAmount * speedFactor * controlFactor;
+      if (!penalized && (keys['d'] || keys['arrowright'])) carAngle -= turnAmount * speedFactor * controlFactor;
 
       // Acceleration / braking
-      if (keys['w'] || keys['arrowup']) {
+      if (!penalized && (keys['w'] || keys['arrowup'])) {
         speed += ACCEL * dt * (onOil ? 0.5 : 1.0);
-      } else if (keys['s'] || keys['arrowdown']) {
+      } else if (!penalized && (keys['s'] || keys['arrowdown'])) {
         speed -= BRAKE * dt;
       } else {
         if (speed > 0) speed = Math.max(0, speed - FRICTION * dt * (onOil ? 0.2 : 1.0));
@@ -1485,8 +1534,8 @@ function animate() {
       }
 
       // On oil, add slight uncontrolled slide in opposite turning direction
-      if (onOil && (keys['a'] || keys['arrowleft'])) carAngle -= turnAmount * 0.3;
-      if (onOil && (keys['d'] || keys['arrowright'])) carAngle += turnAmount * 0.3;
+      if (onOil && !penalized && (keys['a'] || keys['arrowleft'])) carAngle -= turnAmount * 0.3;
+      if (onOil && !penalized && (keys['d'] || keys['arrowright'])) carAngle += turnAmount * 0.3;
 
       speed = THREE.MathUtils.clamp(speed, -MAX_SPEED * 0.3, MAX_SPEED);
 
@@ -1496,6 +1545,9 @@ function animate() {
         const maxSpeedOff = 15;
         if (Math.abs(speed) > maxSpeedOff) speed = Math.sign(speed) * maxSpeedOff;
       }
+
+      // Stunned: the car stays still while the penalty is active
+      if (penalized) speed = 0;
 
       // Move car
       const moveX = Math.sin(carAngle) * speed * dt;
