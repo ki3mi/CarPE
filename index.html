@@ -194,7 +194,7 @@
 import * as THREE from 'three';
 
 // ─── CONFIG ───
-const TRACK_WIDTH = 14;
+const TRACK_WIDTH = 28;
 const TOTAL_LAPS = 3;
 const MAX_SPEED = 90;
 const ACCEL = 40;
@@ -222,13 +222,13 @@ let myId = null;
 let myColor = 0x2266ff;
 let netName = 'Jugador';
 let isHost = false;
-let peer = null;
-let poseChannel = null;
+let peers = new Map();
 let roster = [];
 let remotePlayers = new Map();
+let remoteFinishTimes = new Map();
+let resultsTimer = null;
 let lastPoseSent = 0;
 let localTotalTime = null;
-let remoteTotalTime = null;
 let localProgress = 0;
 let pingMs = 0;
 let gameServerStartTs = 0;
@@ -1007,8 +1007,9 @@ function checkCheckpoints() {
         totalRaceTime = performance.now() - raceStartTime;
         if (mode === 'online') {
           localTotalTime = totalRaceTime;
-          showLapMessage(`¡Llegaste! ${formatTime(totalRaceTime)} (esperando rival…)`);
-          netRelay(remoteId(), { t: 'finish', totalTime: totalRaceTime });
+          showLapMessage(`¡Llegaste! ${formatTime(totalRaceTime)} (esperando a los demás…)`);
+          for (const p of roster) netRelay(p.id, { t: 'finish', totalTime: totalRaceTime });
+          startResultsTimer();
           maybeShowResults();
         } else {
           showLapMessage(`¡Carrera terminada! ${formatTime(totalRaceTime)}`);
@@ -1038,9 +1039,6 @@ function netSend(obj) {
 }
 function netRelay(targetId, msg) {
   netSend({ t: 'relay', target: targetId, msg });
-}
-function remoteId() {
-  return roster.length ? roster[0].id : null;
 }
 function setNetStatus(txt) {
   const el = document.getElementById('net-status');
@@ -1082,15 +1080,16 @@ function handleNetMsg(m) {
     case 'roster':
       roster = (m.players || []).filter(p => p.id !== myId);
       rebuildRemotePlayers();
+      syncPeers();
       const startBtn = document.getElementById('net-start');
       if (isHost && roster.length >= 1) {
         startBtn.style.display = 'inline-block';
-        setNetStatus('Sala lista: 2 jugadores. ¡Inicia la carrera!');
-        initP2P();
+        const total = (m.players || []).length;
+        setNetStatus('Sala lista: ' + total + ' jugador' + (total === 1 ? '' : 'es') + '. ¡Inicia la carrera!');
       } else {
         startBtn.style.display = 'none';
       }
-      document.getElementById('net-roster').textContent = (m.players || []).map(p => p.name).join('  vs  ');
+      document.getElementById('net-roster').textContent = (m.players || []).map(p => p.name).join('  ·  ');
       break;
     case 'join':
       setNetStatus(m.name + ' entró a la sala');
@@ -1103,18 +1102,19 @@ function handleNetMsg(m) {
       roster = roster.filter(p => p.id !== m.id);
       setNetStatus('Un jugador abandonó la sala');
       if (gameState === 'racing' || gameState === 'countdown') {
-        showLapMessage('El rival se desconectó');
+        showLapMessage('Un jugador se desconectó');
         setTimeout(() => { gameState = 'menu'; location.reload(); }, 2500);
       }
       break;
     case 'relay':
       if (!m.msg) return;
       if (m.msg.t === 'offer') onOffer(m.from, m.msg);
-      else if (m.msg.t === 'answer') onAnswer(m.msg);
+      else if (m.msg.t === 'answer') onAnswer(m.from, m.msg);
       else if (m.msg.t === 'ice') onIce(m.from, m.msg);
       else if (m.msg.t === 'finish') {
-        remoteTotalTime = m.msg.totalTime;
-        showLapMessage('¡Tu rival llegó! ' + formatTime(m.msg.totalTime));
+        remoteFinishTimes.set(m.from, m.msg.totalTime);
+        const fn = remotePlayers.get(m.from);
+        showLapMessage((fn ? fn.name : 'Un rival') + ' llegó: ' + formatTime(m.msg.totalTime));
         maybeShowResults();
       }
       break;
@@ -1132,55 +1132,80 @@ function handleNetMsg(m) {
   }
 }
 
-// --- WebRTC (línea directa UDP-like para las poses) ---
-function createPeer() {
-  const p = new RTCPeerConnection();
-  p.onicecandidate = e => {
-    if (e.candidate && remoteId() != null) {
-      netRelay(remoteId(), { t: 'ice', candidate: e.candidate.toJSON() });
-    }
-  };
-  p.ondatachannel = ev => {
-    if (ev.channel.label === 'pose') {
-      poseChannel = ev.channel;
-      poseChannel.onopen = () => setNetStatus('Conexión P2P establecida');
-      poseChannel.onmessage = e => { try { onRemotePose(remoteId(), JSON.parse(e.data)); } catch {} };
-    }
-  };
-  return p;
+// --- WebRTC (malla P2P, línea directa UDP-like para las poses) ---
+function bindChannel(ch, id) {
+  ch.onopen = () => updateNetStatus();
+  ch.onmessage = e => { try { onRemotePose(id, JSON.parse(e.data)); } catch {} };
 }
 
-function initP2P() {
-  if (peer || roster.length < 1) return;
-  peer = createPeer();
-  poseChannel = peer.createDataChannel('pose', { ordered: false, maxRetransmits: 0 });
-  poseChannel.onopen = () => setNetStatus('Conexión P2P establecida');
-  poseChannel.onmessage = e => { try { onRemotePose(remoteId(), JSON.parse(e.data)); } catch {} };
-  peer.createOffer().then(o => {
-    peer.setLocalDescription(o).then(() => {
-      netRelay(remoteId(), { t: 'offer', sdp: peer.localDescription });
-    });
-  });
+function ensurePeer(id) {
+  let pr = peers.get(id);
+  if (!pr) {
+    const pc = new RTCPeerConnection();
+    pr = { pc, channel: null };
+    peers.set(id, pr);
+    pc.onicecandidate = e => {
+      if (e.candidate) netRelay(id, { t: 'ice', candidate: e.candidate.toJSON() });
+    };
+    pc.ondatachannel = ev => {
+      if (ev.channel.label === 'pose') {
+        pr.channel = ev.channel;
+        bindChannel(ev.channel, id);
+      }
+    };
+  }
+  return pr;
+}
+
+function syncPeers() {
+  const ids = new Set(roster.map(p => p.id));
+  for (const [id, pr] of [...peers]) {
+    if (!ids.has(id)) {
+      try { if (pr.channel) pr.channel.close(); pr.pc.close(); } catch {}
+      peers.delete(id);
+    }
+  }
+  for (const p of roster) {
+    const pr = ensurePeer(p.id);
+    // El jugador de menor id inicia el canal y la oferta (evita dobles conexiones en cada par)
+    if (myId !== null && myId < p.id && !pr.channel) {
+      const ch = pr.pc.createDataChannel('pose', { ordered: false, maxRetransmits: 0 });
+      pr.channel = ch;
+      bindChannel(ch, p.id);
+      pr.pc.createOffer().then(o => pr.pc.setLocalDescription(o)).then(() => {
+        netRelay(p.id, { t: 'offer', sdp: pr.pc.localDescription });
+      });
+    }
+  }
+  updateNetStatus();
+}
+
+function updateNetStatus() {
+  let open = 0;
+  for (const pr of peers.values()) if (pr.channel && pr.channel.readyState === 'open') open++;
+  if (open > 0) setNetStatus('Conexión P2P: ' + open + '/' + roster.length);
+  else if (roster.length > 0) setNetStatus('Conectando P2P…');
 }
 
 function onOffer(from, msg) {
-  if (!peer) peer = createPeer();
-  peer.setRemoteDescription(new RTCSessionDescription(msg.sdp)).then(() => peer.createAnswer()).then(ans => {
-    peer.setLocalDescription(ans).then(() => {
-      netRelay(from, { t: 'answer', sdp: peer.localDescription });
+  const pr = ensurePeer(from);
+  pr.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).then(() => pr.pc.createAnswer()).then(ans => {
+    pr.pc.setLocalDescription(ans).then(() => {
+      netRelay(from, { t: 'answer', sdp: pr.pc.localDescription });
     });
   });
 }
 
-function onAnswer(msg) {
-  if (peer && peer.remoteDescription === null) {
-    peer.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(() => {});
+function onAnswer(from, msg) {
+  const pr = peers.get(from);
+  if (pr && pr.pc.remoteDescription === null) {
+    pr.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(() => {});
   }
 }
 
 function onIce(from, msg) {
-  if (!peer) return;
-  peer.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+  const pr = peers.get(from);
+  if (pr) pr.pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
 }
 
 // --- Coches remotos e interpolación ---
@@ -1212,20 +1237,30 @@ function paintLocalCar(color) {
 }
 
 function rebuildRemotePlayers() {
+  let i = 0;
   for (const p of roster) {
     if (!remotePlayers.has(p.id)) {
       const group = createRemoteCar(p.color);
-      group.position.set(initPos.x, CAR_Y, initPos.z);
+      const off = posOnTrack(0, (i - (roster.length - 1) / 2) * 3);
+      group.position.set(off.x, CAR_Y, off.z);
       group.rotation.y = initRot;
       scene.add(group);
       remotePlayers.set(p.id, { group, poses: [], name: p.name, color: p.color, lap: 0, progress: 0 });
     }
+    i++;
   }
 }
 
 function removeRemotePlayer(id) {
   const rp = remotePlayers.get(id);
   if (rp) { scene.remove(rp.group); remotePlayers.delete(id); }
+  remoteFinishTimes.delete(id);
+  const pr = peers.get(id);
+  if (pr) {
+    try { if (pr.channel) pr.channel.close(); pr.pc.close(); } catch {}
+    peers.delete(id);
+  }
+  updateNetStatus();
 }
 
 function onRemotePose(id, p) {
@@ -1269,12 +1304,17 @@ function updateRemoteCars(dt) {
 }
 
 function sendPose() {
-  if (!poseChannel || poseChannel.readyState !== 'open' || !remoteId()) return;
+  if (mode !== 'online') return;
   localProgress = getClosestTrackT(carGroup.position.x, carGroup.position.z);
-  poseChannel.send(JSON.stringify({
+  const msg = JSON.stringify({
     x: carGroup.position.x, z: carGroup.position.z, yaw: carAngle,
     speed, lap: currentLap, progress: localProgress
-  }));
+  });
+  for (const pr of peers.values()) {
+    if (pr.channel && pr.channel.readyState === 'open') {
+      try { pr.channel.send(msg); } catch {}
+    }
+  }
 }
 
 function onlinePositionText() {
@@ -1285,18 +1325,31 @@ function onlinePositionText() {
 }
 
 function maybeShowResults() {
-  if (localTotalTime == null || remoteTotalTime == null) return;
-  const rivalP = roster[0];
-  const rows = [
-    { name: netName + ' (tú)', t: localTotalTime, me: true },
-    { name: rivalP ? rivalP.name : 'Rival', t: remoteTotalTime, me: false },
-  ].sort((a, b) => a.t - b.t);
+  if (localTotalTime == null) return;
+  if (!roster.every(p => remoteFinishTimes.has(p.id))) return;
+  showOnlineResults();
+}
+
+function showOnlineResults() {
+  clearTimeout(resultsTimer);
+  const rows = [{ name: netName + ' (tú)', t: localTotalTime, me: true }];
+  for (const p of roster) {
+    rows.push({ name: p.name, t: remoteFinishTimes.has(p.id) ? remoteFinishTimes.get(p.id) : null, me: false });
+  }
+  rows.sort((a, b) => (a.t == null ? Infinity : a.t) - (b.t == null ? Infinity : b.t));
   const el = document.getElementById('results-rows');
   el.innerHTML = rows.map(r => {
-    const isWinner = r.t === rows[0].t;
-    return '<div class="result-row' + (isWinner ? ' winner' : '') + '"><span>' + r.name + '</span><span>' + formatTime(r.t) + '</span></div>';
+    const isWinner = r.t != null && r.t === rows[0].t;
+    return '<div class="result-row' + (isWinner ? ' winner' : '') + '"><span>' + r.name + '</span><span>' + (r.t != null ? formatTime(r.t) : 'DNF') + '</span></div>';
   }).join('');
   document.getElementById('results').style.display = 'flex';
+}
+
+function startResultsTimer() {
+  clearTimeout(resultsTimer);
+  resultsTimer = setTimeout(() => {
+    if (localTotalTime != null) showOnlineResults();
+  }, 25000);
 }
 
 document.getElementById('results-back').addEventListener('click', () => location.reload());
@@ -1353,8 +1406,9 @@ function startCountdown() {
   checkInOrder = 0;
   passedStart = false;
   oilSlideTimer = 0;
+  clearTimeout(resultsTimer);
   localTotalTime = null;
-  remoteTotalTime = null;
+  remoteFinishTimes.clear();
   lastPoseSent = 0;
   carGroup.position.set(initPos.x, CAR_Y, initPos.z);
   carAngle = Math.atan2(initTangent.x, initTangent.z);

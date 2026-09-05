@@ -1,15 +1,15 @@
 # Circuito Urbano Online
 
-Juego de carreras 3D con Three.js y multijugador en red local (LAN) para 2 jugadores.
+Juego de carreras 3D con Three.js y multijugador en red local (LAN) para 2, 3 o 4 jugadores.
 
 - **Modo solo**: carrera contra el cronómetro contra obstáculos (barriles, bloques, vallas y parches de aceite).
-- **Modo en línea**: carrera de 2 jugadores por la red local. Lobby + señalización vía WebSocket y poses del coche en tiempo real por WebRTC DataChannel (UDP-like), que solo depende de la LAN, sin internet ni servidores externos.
+- **Modo en línea**: carrera de 2 a 4 jugadores por la red local (malla P2P). Lobby + señalización vía WebSocket y poses de los coches en tiempo real por WebRTC DataChannel (UDP-like), que solo depende de la LAN, sin internet ni servidores externos.
 
 ## Requisitos
 
 - [Node.js](https://nodejs.org/) instalado (versión 14 o superior). Se usa únicamente para el servidor de señalización.
 - Navegador moderno (Chrome, Edge, Firefox) con WebRTC habilitado (todos lo traen por defecto).
-- 2 PCs en la **misma red local** (o el mismo PC abriendo 2 pestañas).
+- 2 a 4 PCs en la **misma red local** (o el mismo PC abriendo varias pestañas/ventanas).
 
 Three.js se carga desde CDN, por lo que los navegadores necesitan conexión a internet para cargar la librería. El juego en sí funciona en LAN.
 
@@ -52,10 +52,10 @@ Abre el archivo `index.html` en el navegador, tanto en el PC host como en el inv
 
 1. En el PC **anfitrión**, pulsa **JUGAR EN LÍNEA**. El campo "IP del host" puede dejarse en `127.0.0.1` (esa IP siempre apunta al propio equipo). Pulsa **CONECTAR**.
 2. En el PC **invitado**, pulsa **JUGAR EN LÍNEA**, escribe la **IP LAN del host** (ver sección siguiente) y pulsa **CONECTAR**.
-3. El primer jugador conectado es el host. Cuando entren los 2 jugadores, el host verá el botón **INICIAR CARRERA**. Ambos verán "Sala lista: 2 jugadores".
+3. El primer jugador conectado es el host. Entra el **host y todos los participantes** (mínimo 2). Cuando haya al menos 2 jugadores en sala, el host verá el botón **INICIAR CARRERA** (puede esperar a tener 3 o 4). Todos ven "Sala lista: N jugadores".
 4. Pulsa **INICIAR CARRERA** y la cuenta regresiva empieza en ambas PC a la vez.
 
-> Nota: si se desconecta el host durante el juego, el otro jugador pasa a ser host. Si un jugador abandona la sala, la carrera termina para ambos.
+> Nota: si se desconecta el host durante el juego, otro jugador pasa a ser host automáticamente. Si alguien abandona la sala durante la carrera, la carrera termina para los demás.
 
 ## Cómo saber tu IP LAN (con ipconfig)
 
@@ -103,7 +103,7 @@ Objetivo: completar **3 vueltas**. Cuidado con los obstáculos; los parches de a
 
 ## Clasificación en línea
 
-Durante la carrera verás en la pantalla tu **Ping** (ms) y tu **Posición** en vivo. Al terminar los 2 jugadores se muestra el marcador con el ganador. La sincronización del rival usa interpolación de 120 ms sobre las poses enviadas a 20 Hz.
+Durante la carrera verás en la pantalla tu **Ping** (ms) y tu **Posición** en vivo entre todos los participantes. Al llegar, se avisa quién cruza la meta; el marcador aparece cuando **todos** terminan (con un espera máxima de 25 s para los que no llegan, que cuentan como DNF). La sincronización de cada rival usa interpolación de 120 ms sobre las poses enviadas a 20 Hz.
 
 ## Archivos
 

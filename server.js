@@ -8,8 +8,8 @@ const { WebSocketServer } = require('ws');
 const os = require('os');
 
 const PORT = process.env.PORT || 8080;
-const MAX_PLAYERS = 2;
-const COLORS = [0x3366ff, 0xff3333];
+const MAX_PLAYERS = 4;
+const COLORS = [0x3366ff, 0xff3333, 0x33cc66, 0xff9900];
 
 const wss = new WebSocketServer({ port: PORT });
 
@@ -30,7 +30,7 @@ function rosterMsg() {
 
 wss.on('connection', (ws) => {
   if (players.length >= MAX_PLAYERS) {
-    send(ws, { t: 'error', msg: 'Sala llena (máximo 2 jugadores).' });
+    send(ws, { t: 'error', msg: 'Sala llena (máximo 4 jugadores).' });
     ws.close();
     return;
   }
@@ -64,7 +64,7 @@ wss.on('connection', (ws) => {
       }
 
       case 'start':
-        // Solo el host puede arrancar, y con ambos jugadores presentes
+        // Solo el host puede arrancar, y con al menos 2 jugadores presentes
         if (player.host && players.length >= 2) {
           broadcast({ t: 'start', ts: Date.now() });
         }
@@ -77,10 +77,11 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    const wasHost = player.host;
     players = players.filter(p => p !== player);
     broadcast({ t: 'leave', id: player.id });
-    // Si queda un solo jugador, pasa a ser host
-    if (players.length === 1 && !players[0].host) {
+    // Si el host se desconectó, el primer jugador restante pasa a ser host
+    if (wasHost && players.length > 0 && !players[0].host) {
       players[0].host = true;
       send(players[0].ws, { t: 'role', host: true });
     }
