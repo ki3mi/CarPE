@@ -1,0 +1,12 @@
+{
+  "name": "circuito-urbano-online",
+  "version": "1.0.0",
+  "description": "Juego de carreras 3D con multijugador en red local (WebRTC UDP-like + signaling WebSocket)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
