@@ -1,0 +1,136 @@
+/* =========================================================
+   Circuito Urbano Online — Hoja de estilos
+   Extraída de index.html. Comentarios en español.
+   ========================================================= */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+canvas { display: block; }
+
+#hud {
+  position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 10;
+}
+
+#speed-bar {
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.7); border-radius: 12px; padding: 10px 30px;
+  display: flex; align-items: center; gap: 20px; color: #fff;
+  border: 1px solid rgba(255,255,255,0.15); pointer-events: none; z-index: 10;
+}
+
+#speed-val { font-size: 42px; font-weight: 700; color: #0ff; font-variant-numeric: tabular-nums; }
+#speed-unit { font-size: 14px; color: #aaa; }
+
+#lap-info {
+  position: fixed; top: 20px; right: 20px; text-align: right;
+  color: #fff; pointer-events: none; z-index: 10;
+}
+#lap-info .label { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+#lap-info .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#lap-info .best { color: #0f0; }
+#lap-info .label.mt { margin-top: 10px; }
+#lap-info .value.small { font-size: 16px; }
+#ping-val { color: #0ff; }
+
+#timer {
+  position: fixed; top: 20px; left: 20px; color: #fff;
+  pointer-events: none; z-index: 10;
+}
+#timer .label { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+#timer .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+#minimap {
+  position: fixed; bottom: 30px; right: 20px; width: 160px; height: 160px;
+  background: rgba(0,0,0,0.5); border-radius: 10px; border: 1px solid rgba(255,255,255,0.15);
+  pointer-events: none; z-index: 10; overflow: hidden;
+}
+#minimap canvas { width: 100%; height: 100%; }
+
+#start-screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(10,10,30,0.85) 0%, rgba(0,0,0,0.95) 100%);
+  z-index: 100; color: #fff; text-align: center;
+}
+#start-screen h1 {
+  font-size: 52px; font-weight: 900; margin-bottom: 8px;
+  background: linear-gradient(135deg, #0ff, #f0f);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  text-shadow: none;
+}
+#start-screen .sub { font-size: 16px; color: #aaa; margin-bottom: 40px; }
+#start-screen .controls {
+  display: grid; grid-template-columns: auto auto; gap: 6px 20px;
+  font-size: 15px; margin-bottom: 40px;
+}
+#start-screen .controls .key {
+  background: rgba(255,255,255,0.12); padding: 4px 12px; border-radius: 5px;
+  font-weight: 600; text-align: center;
+}
+#start-screen .start-btn {
+  padding: 14px 50px; font-size: 18px; font-weight: 700;
+  background: linear-gradient(135deg, #0ff, #08f); color: #000;
+  border: none; border-radius: 8px; cursor: pointer; pointer-events: auto;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+#start-screen .start-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(0,255,255,0.4); }
+#start-screen .hint { margin: -20px 0 20px; font-size: 13px; color: #888; }
+
+#countdown {
+  position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+  z-index: 90; color: #fff; font-size: 120px; font-weight: 900;
+  text-shadow: 0 0 40px rgba(0,255,255,0.6);
+}
+
+#lap-message {
+  position: fixed; top: 35%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 36px; font-weight: 700; color: #0f0;
+  text-shadow: 0 0 20px rgba(0,255,0,0.5);
+  pointer-events: none; z-index: 50; opacity: 0; transition: opacity 0.3s;
+}
+
+#penalty-message {
+  position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%);
+  display: none; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none; z-index: 60; color: #ff3b3b;
+  font-size: 54px; font-weight: 900; letter-spacing: 8px; text-transform: uppercase;
+  text-shadow: 0 0 26px rgba(255,0,0,0.85);
+  animation: penaltyPulse 0.45s ease-in-out infinite alternate;
+}
+#penalty-title { line-height: 1; }
+#penalty-sub {
+  font-size: 18px; font-weight: 600; color: #fff; letter-spacing: 3px;
+  text-shadow: 0 0 14px rgba(255,60,60,0.9);
+}
+@keyframes penaltyPulse {
+  from { transform: translate(-50%, -50%) scale(1); }
+  to { transform: translate(-50%, -50%) scale(1.06); }
+}
+
+#main-menu-buttons { display: flex; gap: 14px; margin-bottom: 24px; }
+#online-panel {
+  display: none; flex-direction: column; align-items: center; gap: 12px;
+  background: rgba(255,255,255,0.08); padding: 22px 28px; border-radius: 12px; margin-bottom: 24px;
+}
+#online-panel h3 { margin: 0 0 4px; }
+#online-panel input {
+  padding: 10px 12px; border-radius: 6px; border: none; font-size: 14px; width: 240px; text-align: center; color: #000;
+}
+.btn-row { display: flex; gap: 10px; }
+#net-status { font-size: 13px; color: #8cf; min-height: 16px; }
+#net-roster { font-size: 14px; color: #fff; min-height: 20px; }
+#net-start { display: none; }
+.start-btn.alt { background: linear-gradient(135deg, #f0f, #f80); color: #fff; }
+.start-btn.small { padding: 10px 22px; font-size: 14px; }
+.start-btn.gray { background: linear-gradient(135deg, #555, #333); color: #fff; }
+#results {
+  position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.93); z-index: 200; color: #fff; text-align: center;
+}
+#results h2 { font-size: 46px; margin-bottom: 20px; }
+#results-rows { margin-bottom: 24px; }
+.result-row {
+  display: flex; justify-content: space-between; gap: 50px; font-size: 24px;
+  padding: 12px 24px; border-radius: 8px; margin: 8px 0; min-width: 360px; background: rgba(255,255,255,0.06);
+}
+.result-row.winner { background: rgba(255,220,0,0.2); box-shadow: 0 0 18px rgba(255,220,0,0.3); }

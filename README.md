@@ -13,9 +13,13 @@ Juego de carreras 3D con Three.js y multijugador en red local (LAN) para 2, 3 o 
 
 Three.js se carga desde CDN, por lo que los navegadores necesitan conexión a internet para cargar la librería. El juego en sí funciona en LAN.
 
+> La página del juego (HTML, CSS y JS) se sirve desde el propio `server.js` por HTTP.
+> Por eso **ya no se abre `index.html` con doble clic** (CORS bloquearía los módulos ES):
+> hay que arrancar el servidor y abrir `http://<ip>:8080`.
+
 ## Instalación
 
-1. Descarga o clona la carpeta del proyecto (donde están `index.html`, `server.js` y `package.json`).
+1. Descarga o clona la carpeta del proyecto (donde están `index.html`, `css/`, `js/`, `server.js` y `package.json`).
 2. Abre una terminal en esa carpeta e instala la dependencia del servidor:
 
 ```bash
@@ -42,11 +46,16 @@ Escuchando en el puerto 8080
    ws://192.168.253.1:8080     <- (puede haber varias direcciones, usa la real)
 ```
 
-El servidor actúa como lobby y puente de señalización WebRTC. No transmite el juego: las poses de los coches se envían directamente entre los dos navegadores por WebRTC.
+El servidor entrega la página del juego por HTTP y actúa como lobby y puente de señalización WebRTC. No transmite las poses de los coches: se envían directamente entre los dos navegadores por WebRTC.
 
 ### 2) Abrir el juego en cada PC
 
-Abre el archivo `index.html` en el navegador, tanto en el PC host como en el invitado.
+El servidor entrega la página del juego por HTTP en el mismo puerto (8080).
+- En el **PC host**: abre `http://localhost:8080` en el navegador.
+- En cada **PC invitado**: abre `http://<ip-LAN-del-host>:8080` (la misma IP que se imprimió al arrancar el servidor).
+
+> Anotación: abrir el archivo `index.html` localmente con doble clic ya no funciona
+> (los módulos ES se bloquean por CORS). Usa siempre la URL `http://…:8080`.
 
 ### 3) Conectarse
 
@@ -77,7 +86,9 @@ Adaptador de LAN inalámbrica Wi-Fi:
 
 - La **Dirección IPv4** es la IP LAN del host: asígnala en el invitado, p. ej. `192.168.0.21`.
 - Escoge una IP que sea **privada** (normalmente `192.168.x.x`, `10.x.x.x` o `172.16.x.x`–`172.31.x.x`) y que **no** comience por `169.254` (eso indica que no hay red).
-- El servidor también imprime sus IPs disponibles al arrancar (`ws://192.168.0.21:8080`).
+- El servidor también imprime sus direcciones disponibles al arrancar:
+  - `http://192.168.0.21:8080` (página del juego para todos los navegadores)
+  - `ws://192.168.0.21:8080` (señalización WebSocket)
 
 En **Linux/macOS** usa equivalente:
 
@@ -109,6 +120,8 @@ Durante la carrera verás en la pantalla tu **Ping** (ms) y tu **Posición** en 
 
 | Archivo | Descripción |
 | --- | --- |
-| `index.html` | El juego completo (escena, coche, físicas, HUD, red). Ábrelo en el navegador. |
-| `server.js` | Lobby y señalización WebRTC (WebSocket en el puerto 8080). |
+| `index.html` | Estructura de la página (HTML) e importmap de Three.js. |
+| `css/style.css` | Hoja de estilos (HUD, menús, pantallas). |
+| `js/main.js` | El juego completo en un módulo ES: escena, coche, físicas, HUD, red. |
+| `server.js` | Sirve la página por HTTP + lobby y señalización WebRTC (WebSocket en el puerto 8080). |
 | `package.json` | Configuración del proyecto e instalación de `ws`. |

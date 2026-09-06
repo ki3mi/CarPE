@@ -25,8 +25,10 @@ Flujo de uso completo, instalación e instrucciones de conectividad LAN
 
 | Archivo | Rol |
 | --- | --- |
-| `index.html` | Todo el juego: HTML + CSS + `<script type="module">`. Escena, física, HUD, red. |
-| `server.js` | Servidor de señalización WebSocket (lobby, relay de ofertas WebRTC, eventos). Requiere `ws`. |
+| `index.html` | Estructura de la página: HTML + importmap de Three.js + `<script type="module" src="js/main.js">`. |
+| `css/style.css` | Hoja de estilos del juego (HUD, menús, pantallas de resultado). |
+| `js/main.js` | Todo el juego en un módulo ES: escena, física, HUD, red. |
+| `server.js` | Sirve la página por HTTP y actúa como señalización WebSocket (lobby, relay de ofertas WebRTC, eventos). Requiere `ws`. |
 | `package.json` | `start: node server.js`, dependencia `ws ^8.18.0`. |
 | `README.md` | Guía de instalación, ejecución y conexión LAN para usuarios. |
 | `package-lock.json` / `.gitignore` | Lockfile e ignores (evita `node_modules`). |
@@ -77,14 +79,17 @@ Flujo de uso completo, instalación e instrucciones de conectividad LAN
 
 ### 3.5 Modo en línea (arquitectura de red)
 - **Servidor** (`server.js`, puerto `8080`, `env PORT`):
+  - Sirve la página del juego por HTTP (estáticos: `/`, `css/`, `js/`) e integra
+    el WebSocket en el mismo puerto (modo `noServer` + `upgrade`).
   - `MAX_PLAYERS = 4`; 4 colores por orden de conexión:
     `[0x3366ff, 0xff3333, 0x33cc66, 0xff9900]`.
   - Mensajes: `welcome`, `roster` (broadcast), `role` (promoción de host),
     `leave`, relay `{t:'relay', from, msg}` (ofrecido/answer/ice/finish),
     `start` (solo host y con ≥2 jugadores), `ping`→`pong`, `error`
     (sala llena).
-  - Imprime sus IPs LAN al arrancar.
-- **Cliente** (`index.html`, sección "RED LOCAL"):
+  - Imprime sus URLs HTTP y WS al arrancar (`http://ip:8080`, `ws://ip:8080`).
+- **Cliente** (`js/main.js`, marcado `// ═══════ RED LOCAL ═══════`; estructuras
+  HTML en `index.html`):
   - Variables globales: `mode`, `netSocket`, `myId`, `myColor`, `netName`,
     `isHost`, `peers` (Map id→`{pc, channel}`), `roster` (excluye a mí),
     `remotePlayers` (Map id→`{group, poses, lap, progress, name, color}`),
@@ -124,8 +129,11 @@ Flujo de uso completo, instalación e instrucciones de conectividad LAN
 
 - Comentarios y textos de UI en **español**; nombres de variables/funciones en
   **inglés** (camelCase).
-- Juego autocontenido en `index.html` (HTML + CSS + un único
-  `<script type="module">` con `importmap` a Three.js r160 vía CDN).
+- Juego separado en tres archivos cliente: `index.html` (estructura HTML +
+  `importmap` de Three.js r160 vía CDN), `css/style.css` (estilos) y
+  `js/main.js` (un único `<script type="module" src="js/main.js">`).
+- Los estilos inline del HTML están convertidos a clases en `css/style.css`
+  (p. ej. `.label.mt`, `.value.small`, `.btn-row`, `#net-start`).
 - Secciones marcadas con barras: `// ─── NOMBRE ───` y
   `// ═══════ NOMBRE ═══════`.
 - La escena se construye de forma síncrona al cargar (top-level) **independiente
@@ -136,15 +144,15 @@ Flujo de uso completo, instalación e instrucciones de conectividad LAN
 
 ## 5. Verificación (comandos usados habitualmente)
 
-- Sintaxis del módulo del cliente (extraer y chequear con Node):
-  - Extraer `<script type="module">...</script>` de `index.html` a un `.mjs`
-    y ejecutar `node --check`.
+- Sintaxis del módulo del cliente: `node --check js/main.js`.
 - Sintaxis del servidor: `node --check server.js`.
+- Smoke test HTTP: levantar `node server.js` y comprobar respuesta 200 de `/`,
+  `/css/style.css` y `/js/main.js` (el navegador los resuelve por la misma URL).
 - Prueba de señalización: script Node temporal que levanta `node server.js`
   y simula 4 clientes `ws` (host, rosters, relay entre pares, ping/pong,
   solo-host inicia, sala llena, promoción de host, leave). P2P WebRTC no es
   testeable headless: se valida por revisión lógica.
-- Arranque del servidor: `npm start` o `node server.js` (imprime IPs LAN).
+- Arranque del servidor: `npm start` o `node server.js` (imprime HTTP y WS).
 - `npm install` tras clonar/actualizar deps.
 
 ## 6. Mejoras a futuro (roadmap)
@@ -152,13 +160,16 @@ Flujo de uso completo, instalación e instrucciones de conectividad LAN
 ### 6.1 PRIORIDAD 1 — Parámetros de partida desde el servidor (seguridad/antitrampa)
 Propósito: que la configuración del juego (ancho de pista, vueltas, obstáculos
 y físicas) **la emita el servidor al inicio de la partida**, de modo que un
-cliente no pueda alterar `index.html` para cambiar las reglas en línea.
+cliente no pueda alterar los archivos recibidos (`js/main.js`) para cambiar las
+reglas en línea. Desde que el servidor sirve la página por HTTP, todos los
+jugadores reciben ya el mismo código, pero las constantes de partida siguen
+fijas en el cliente.
 
 Diseño propuesto (aún NO implementado):
 - Añadir un config autoritativo en `server.js`
   (ej. `{trackWidth, totalLaps, obstacleCount, maxSpeed, accel, brake,
   friction, turnSpeed, carY, seed}`) con valores por defecto que reflejen las
-  constantes del cliente (`index.html:216-223`).
+  constantes del cliente (`js/main.js`, sección `// ─── CONFIG ───`).
 - El **host configura** en el lobby: tamaño de autopista y cantidad de
   obstáculos (y opcionalmente vueltas). Nuevo mensaje `{t:'settings', config}`
   → el servidor **valida y clampa** rangos razonables (sugerencia: `trackWidth`
@@ -177,9 +188,9 @@ Diseño propuesto (aún NO implementado):
   - **Seed común** (p. ej. PRNG *mulberry32*) para que el layout de obstáculos
     sea idéntico en todos los jugadores (fairness), incluyendo `obstacleCount`.
 - Limitación esperable: sin simulación autoritativa por servidor de las
-  físicas, un jugador que reescriba su propio `index.html` podría redefinir el
-  motor del juego; el objetivo es impedir trampas *de configuración*, no
-  proteger contra una reedición completa del cliente.
+  físicas, un jugador que reescriba los archivos que recibe del servidor podría
+  redefinir el motor del juego; el objetivo es impedir trampas *de
+  configuración*, no proteger contra una reedición completa del cliente.
 
 ### 6.2 Repartir obstáculos según el ancho de pista
 Hoy los laterales son fijos (±3/±3.5) mientras `TRACK_WIDTH = 28`; las curvas
